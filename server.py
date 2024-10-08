@@ -2,10 +2,16 @@ import socket
 import struct
 import selectors
 from handle_files import read_port, create_port_file, create_data_folder
-from handle_request import handle_request, handle825, handle826
+from handle_request import handle_request, handle825, handle826, handle827, handle828
+from database import Database
+
+SIGNUP_CODE = 825
+RSA_KEY_TRANSFER_CODE = 826
+RECONNECT_CODE = 827
+FILE_TRANSFER_CODE = 828
 
 sel = selectors.DefaultSelector()
-create_port_file(8080)
+create_port_file()
 PORT = read_port()
 create_data_folder()
 HOST = '127.0.0.1'
@@ -13,20 +19,26 @@ HOST = '127.0.0.1'
 
 def accept_connection(sock, mask):
     conn, addr = sock.accept()
-    print('Connected by', addr)
+    # print('Connected by', addr)
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, handle_connection)
 
 
 def handle_connection(conn, mask):
-    print("conn: ", conn)
-    print("mask: ", mask)
+    # print("conn: ", conn)
+    # print("mask: ", mask)
     try:
         client_id, version, code, payload_size, payload = handle_request(sel, conn)
-        if code == 825:
+        if code == SIGNUP_CODE:  # 825
             handle825(conn, client_id, version, code, payload_size, payload)
-        elif code == 826:
+        elif code == RSA_KEY_TRANSFER_CODE:  # 826
             handle826(conn, client_id, version, code, payload_size, payload)
+        elif code == RECONNECT_CODE:  # 827
+            handle827(conn, client_id, version, code, payload_size, payload)
+        elif code == FILE_TRANSFER_CODE:  # 828
+            handle828(conn, client_id, version, code, payload_size, payload)
+        else:
+            print(f"Invalid request code: {code}")
     except ConnectionResetError:
         print("Client connection reset by peer")
     except Exception as e:
@@ -60,6 +72,5 @@ def start_server():
             sel.close()
             s.close()
 
-
-if __name__ == "__main__":
-    start_server()
+# if __name__ == "__main__":
+#     start_server()

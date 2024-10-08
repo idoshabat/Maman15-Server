@@ -13,7 +13,7 @@ def read_port(file_name='port.info'):
         return 1256
 
 
-def create_port_file(port, file_name='port.info'):
+def create_port_file(port=8080, file_name='port.info'):
     try:
         with open(file_name, 'w') as f:
             f.write(str(port))
