@@ -22,5 +22,9 @@ if result is None:
 else:
     print(f"Failed to delete user {username_to_delete}.")
 
+#delete all files
+cursor.execute("DELETE FROM files")
+conn.commit()
+
 # Close the connection
 conn.close()

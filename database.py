@@ -18,9 +18,10 @@ class Database:
         self.cursor = self.conn.cursor()
 
         # Always attempt to create the table if it doesn't exist
-        self._create_table()
+        self._create_clients_table()
+        self.create_files_table()
 
-    def _create_table(self):
+    def _create_clients_table(self):
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS clients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,19 +34,48 @@ class Database:
         ''')
         self.conn.commit()
 
-    def register_user(self, username, public_key=None , aes_key=None):
+    def create_files_table(self):
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                uuid TEXT NOT NULL,
+                fileName TEXT NOT NULL,
+                pathName TEXT NOT NULL,
+                verified BOOLEAN DEFAULT FALSE
+            )
+        ''')
+        self.conn.commit()
+
+    def register_user(self, username,user_uuid, public_key=None , aes_key=None):
         self.cursor.execute("SELECT * FROM clients WHERE username=?", (username,))
         user = self.cursor.fetchone()
 
         if user:
+            print(f"User {username} already exists and has UUID: {user[2]}")
             return False, None
 
-        user_uuid = str(uuid.uuid4()).replace("-", "")[:16]
+        # user_uuid = str(uuid.uuid4()).replace("-", "")[:16]
         self.cursor.execute("INSERT INTO clients (username, uuid, public_key, aes_key) VALUES (?, ?, ?, ?)",
                             (username, user_uuid, public_key, aes_key))
         self.conn.commit()
+        print(f"User {username} registered with UUID: {user_uuid}")
 
         return True, user_uuid
+
+    def register_file(self, user_uuid, fileName, pathName):
+        self.cursor.execute("INSERT INTO files (uuid, fileName, pathName) VALUES (?, ?, ?)",
+                            (user_uuid, fileName, pathName))
+        self.conn.commit()
+        print(f"File {fileName} registered with user UUID: {user_uuid}")
+
+    def get_files(self, user_uuid):
+        self.cursor.execute("SELECT * FROM files WHERE uuid=?", (user_uuid,))
+        return self.cursor.fetchall()
+
+    def verify_file(self, fileName):
+        self.cursor.execute("UPDATE files SET verified=1 WHERE fileName=?", (fileName,))
+        self.conn.commit()
+        print(f"File {fileName} verified ")
 
     def get_user(self, username):
         self.cursor.execute("SELECT * FROM clients WHERE username=?", (username,))

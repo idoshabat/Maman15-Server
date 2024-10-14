@@ -1,4 +1,5 @@
 import os
+import random
 import struct
 import uuid
 from Crypto.PublicKey import RSA
@@ -104,8 +105,10 @@ def handle825(conn, client_id, version, code, payload_size, payload):
         response = bytearray(RESPONSE1600_LENGTH)
         response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 1, 1600, UUID_LENGTH)
         generated_uuid = str(uuid.uuid4()).replace("-", "")[:UUID_LENGTH]
+        print(f"Generated UUID: {generated_uuid}")
         response[RESPONSE_HEADER_LENGTH:] = generated_uuid.encode('utf-8')
         conn.sendall(response)
+        print(f"Generated UUID: {generated_uuid}")
         db.register_user(name, generated_uuid)
 
 
@@ -183,6 +186,7 @@ def handle827(conn, client_id, version, code, payload_size, payload):
 
 def handle828(conn, client_id, version, code, payload_size, payload):
     print("Handling request 828")
+    random_zero_or_one = random.randint(0, 1)
     lengthTillFileContent = 4 + 4 + 2 + 2 + 255
     contentSize, originalFileSize, packetNumber, totalPackets, fileName = struct.unpack('<IIHH255s', payload[:lengthTillFileContent])
     fileName = fileName.decode('utf-8').rstrip('\x00')
@@ -205,10 +209,13 @@ def handle828(conn, client_id, version, code, payload_size, payload):
     with open(file_path, 'wb') as f:
         f.write(decrypted_content)
 
+    # save file to db
+    db.register_file(client_id.decode('utf-8'), fileName, file_path)
+
 
     # Compute checksum of the written file
     cksum_str = read_file(file_path)  # Use the same function to calculate checksum
-    cksum = int(cksum_str.split('\t')[0])
+    cksum = int(cksum_str.split('\t')[0]) + random_zero_or_one
 
 
     # Send the checksum back to the client
@@ -229,6 +236,31 @@ def handle900(conn, client_id, version, code, payload_size, payload):
 
     # Extract the payload
     fileName = payload.decode('utf-8').strip('\x00')
+
+    #verify file
+    db = Database()
+    db.verify_file(fileName)
+
+def handle901(conn, client_id, version, code, payload_size, payload):
+    print("Handling request 901")
+    if len(payload) != REQUEST901_LENGTH - REQUEST_HEADER_LENGTH:
+        print(f"Invalid payload length for request 901: {len(payload)}")
+        return
+
+    # Extract the payload
+    fileName = payload.decode('utf-8').strip('\x00')
+    print(f"File {fileName} has not benn registered")
+
+def handle902(conn, client_id, version, code, payload_size, payload):
+    print("Handling request 902")
+    if len(payload) != REQUEST902_LENGTH - REQUEST_HEADER_LENGTH:
+        print(f"Invalid payload length for request 902: {len(payload)}")
+        return
+
+    # Extract the payload
+    fileName = payload.decode('utf-8').strip('\x00')
+    print(f"File {fileName} has an error 3 times and will be aborted")
+
 
 def remove_padding(data):
     """Remove PKCS7 padding from the decrypted data."""
