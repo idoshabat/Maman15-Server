@@ -59,8 +59,8 @@ class Database:
         self.cursor.execute("SELECT public_key FROM clients WHERE username=?", (username,))
         return self.cursor.fetchone()
 
-    def get_user_aes_key(self, username):
-        self.cursor.execute("SELECT aes_key FROM clients WHERE username=?", (username,))
+    def get_user_aes_key(self, uuid):
+        self.cursor.execute("SELECT aes_key FROM clients WHERE uuid=?", (uuid,))
         return self.cursor.fetchone()
 
     def set_user_public_key(self, username, public_key):

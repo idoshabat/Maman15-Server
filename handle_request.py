@@ -1,9 +1,11 @@
+import os
 import struct
 import uuid
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Random import get_random_bytes
 from database import Database
+from cksum import read_string, read_file
 
 MAX_FILE_SIZE = 1024 * 1024
 
@@ -41,6 +43,7 @@ def handle_request(sel, conn):
         raise Exception("Connection closed")
 
     try:
+        print('**********', data[0:17], '**********')
         client_id, version, code, payload_size = struct.unpack('<16sBHI', data)
         print(f'Received client_id: {client_id}\n, version: {version}\n, code: {code}\n,payloadsize: {payload_size}\n ')
 
@@ -106,7 +109,6 @@ def handle825(conn, client_id, version, code, payload_size, payload):
         db.register_user(name, generated_uuid)
 
 
-
 def handle826(conn, client_id, version, code, payload_size, payload):
     print("Handling request 826")
     if len(payload) != REQUEST826_LENGTH - REQUEST_HEADER_LENGTH:
@@ -152,6 +154,7 @@ def handle826(conn, client_id, version, code, payload_size, payload):
     except Exception as e:
         print(f"Error handling request 826: {e}")
 
+
 def handle827(conn, client_id, version, code, payload_size, payload):
     print("Handling request 827")
     if len(payload) != REQUEST827_LENGTH - REQUEST_HEADER_LENGTH:
@@ -177,24 +180,59 @@ def handle827(conn, client_id, version, code, payload_size, payload):
         response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1601, 0)
         conn.sendall(response)
 
+
 def handle828(conn, client_id, version, code, payload_size, payload):
     print("Handling request 828")
-    lengthTillFileContent = 4+4+2+2+255
-    contentSize , originalFileSize , packetNumber , totalPackets , fileName= struct.unpack('<IIHH255s', payload[:lengthTillFileContent])
+    lengthTillFileContent = 4 + 4 + 2 + 2 + 255
+    contentSize, originalFileSize, packetNumber, totalPackets, fileName = struct.unpack('<IIHH255s', payload[:lengthTillFileContent])
     fileName = fileName.decode('utf-8').rstrip('\x00')
     content = payload[lengthTillFileContent:]
-    print(f"Content: {content}")
 
     db = Database()
-    user = db.get_user_by_uuid(client_id)
+    user = db.get_user_by_uuid(client_id.decode('utf-8'))
     aes_key = db.get_user_aes_key(client_id.decode('utf-8'))
-    print(f"UUID: {client_id.decode('utf-8')}")
-    print(f"Version: {version}")
-    print(f"Code: {code}")
-    print(f"Payload size: {payload_size}")
-    print(f"User: {user}")
-    print(f"AES key: {aes_key}")
-    # #decrypt the content
-    # cipher_aes = AES.new(aes_key[0], AES.MODE_CBC, content[:16])
-    # decrypted_content = cipher_aes.decrypt(content[16:])
-    # print(f"Decrypted content: {decrypted_content}")
+
+    # Decrypt the content using AES CBC with IV full of zeros
+    iv = b'\x00' * 16
+    cipher_aes = AES.new(aes_key[0], AES.MODE_CBC, iv)
+    decrypted_content_padded = cipher_aes.decrypt(content)
+
+    # Remove padding (PKCS7)
+    decrypted_content = remove_padding(decrypted_content_padded)
+
+    # Write the decrypted content to a file
+    file_path = f"data/{fileName}"
+    with open(file_path, 'wb') as f:
+        f.write(decrypted_content)
+
+
+    # Compute checksum of the written file
+    cksum_str = read_file(file_path)  # Use the same function to calculate checksum
+    cksum = int(cksum_str.split('\t')[0])
+
+
+    # Send the checksum back to the client
+    response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1603_LENGTH)
+    response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1603, RESPONSE1603_LENGTH - RESPONSE_HEADER_LENGTH)
+    response[RESPONSE_HEADER_LENGTH:RESPONSE_HEADER_LENGTH + 16] = struct.pack('<16s', client_id)
+    response[RESPONSE_HEADER_LENGTH + 16:RESPONSE_HEADER_LENGTH + 20] = struct.pack('<I', originalFileSize)
+    response[RESPONSE_HEADER_LENGTH + 20:RESPONSE_HEADER_LENGTH + 20 + 255] = struct.pack('<255s', fileName.encode('utf-8'))
+    response[RESPONSE_HEADER_LENGTH + 20 + 255:] = struct.pack('<I', cksum)
+    conn.sendall(response)
+
+
+def handle900(conn, client_id, version, code, payload_size, payload):
+    print("Handling request 900")
+    if len(payload) != REQUEST900_LENGTH - REQUEST_HEADER_LENGTH:
+        print(f"Invalid payload length for request 900: {len(payload)}")
+        return
+
+    # Extract the payload
+    fileName = payload.decode('utf-8').strip('\x00')
+
+def remove_padding(data):
+    """Remove PKCS7 padding from the decrypted data."""
+    padding_length = data[-1]  # Last byte tells how much padding was added
+    if padding_length < 1 or padding_length > 16:
+        raise ValueError("Invalid padding length detected.")
+    return data[:-padding_length]

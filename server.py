@@ -2,13 +2,14 @@ import socket
 import struct
 import selectors
 from handle_files import read_port, create_port_file, create_data_folder
-from handle_request import handle_request, handle825, handle826, handle827, handle828
+from handle_request import handle_request, handle825, handle826, handle827, handle828 , handle900
 from database import Database
 
 SIGNUP_CODE = 825
 RSA_KEY_TRANSFER_CODE = 826
 RECONNECT_CODE = 827
 FILE_TRANSFER_CODE = 828
+VALID_CRC = 900
 
 sel = selectors.DefaultSelector()
 create_port_file()
@@ -37,6 +38,8 @@ def handle_connection(conn, mask):
             handle827(conn, client_id, version, code, payload_size, payload)
         elif code == FILE_TRANSFER_CODE:  # 828
             handle828(conn, client_id, version, code, payload_size, payload)
+        elif code == VALID_CRC:  # 900
+            handle900(conn, client_id, version, code, payload_size, payload)
         else:
             print(f"Invalid request code: {code}")
     except ConnectionResetError:
