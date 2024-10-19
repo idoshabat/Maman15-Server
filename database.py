@@ -63,10 +63,19 @@ class Database:
         return True, user_uuid
 
     def register_file(self, user_uuid, fileName, pathName):
-        self.cursor.execute("INSERT INTO files (uuid, fileName, pathName) VALUES (?, ?, ?)",
-                            (user_uuid, fileName, pathName))
-        self.conn.commit()
-        print(f"File {fileName} registered with user UUID: {user_uuid}")
+        # Check if a file with the same fileName already exists for this user
+        self.cursor.execute("SELECT COUNT(*) FROM files WHERE uuid = ? AND fileName = ?", (user_uuid, fileName))
+        result = self.cursor.fetchone()
+
+        if result[0] == 0:  # If the count is 0, no such file exists
+            self.cursor.execute("INSERT INTO files (uuid, fileName, pathName) VALUES (?, ?, ?)",
+                                (user_uuid, fileName, pathName))
+            self.conn.commit()
+            print(f"File {fileName} registered with user UUID: {user_uuid}")
+            return True
+        else:
+            print(f"File {fileName} already exists for user UUID: {user_uuid}, registration skipped.")
+            return False
 
     def get_files(self, user_uuid):
         self.cursor.execute("SELECT * FROM files WHERE uuid=?", (user_uuid,))

@@ -79,7 +79,7 @@ def memcrc(b):
 def read_file(fname):
     try:
         buffer = open(fname, 'rb').read()
-        print("buffer ",buffer)
+        #print("buffer ",buffer)
         return f"{memcrc(buffer)}\t{len(buffer)}\t{fname}"
     except IOError:
         print("Unable to open input file", fname)

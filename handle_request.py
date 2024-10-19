@@ -44,9 +44,9 @@ def handle_request(sel, conn):
         raise Exception("Connection closed")
 
     try:
-        print('**********', data[0:17], '**********')
+        #print('**********', data[0:17], '**********')
         client_id, version, code, payload_size = struct.unpack('<16sBHI', data)
-        print(f'Received client_id: {client_id}\n, version: {version}\n, code: {code}\n,payloadsize: {payload_size}\n ')
+        #print(f'Received client_id: {client_id}\n, version: {version}\n, code: {code}\n,payloadsize: {payload_size}\n ')
 
         payload = b''
         remaining = payload_size
@@ -58,8 +58,8 @@ def handle_request(sel, conn):
             payload += chunk
             remaining -= len(chunk)
 
-        print(f"Payload received: {payload}")
-        print("Payload size: ", len(payload))
+        #print(f"Payload received: {payload}")
+        #print("Payload size: ", len(payload))
 
         return client_id, version, code, payload_size, payload
         # payload = data[REQUEST_HEADER_LENGTH:REQUEST_HEADER_LENGTH + payload_size].decode('utf-8')
@@ -69,8 +69,10 @@ def handle_request(sel, conn):
         # reply_data = bytearray(reply, 'utf-8')
     except Exception as e:
         print(f"Error handling data: {e}")
-        reply = "Invalid data received"
-        reply_data = bytearray(reply, 'utf-8')
+        #response with code 1607
+        # response = bytearray(RESPONSE_HEADER_LENGTH)
+        # response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1607, 0)
+        # conn.sendall(response)
         sel.unregister(conn)
         conn.close()
 
@@ -91,7 +93,7 @@ def handle825(conn, client_id, version, code, payload_size, payload):
     # Extract the payload
     # payload = payload.decode('utf-8')
     name = payload.decode('utf-8').rstrip('\x00')
-    print(f"Payload for request 825: {name}")
+    # print(f"Payload for request 825: {name}")
 
     db = Database()
     user = db.get_user(name)
@@ -105,10 +107,8 @@ def handle825(conn, client_id, version, code, payload_size, payload):
         response = bytearray(RESPONSE1600_LENGTH)
         response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 1, 1600, UUID_LENGTH)
         generated_uuid = str(uuid.uuid4()).replace("-", "")[:UUID_LENGTH]
-        print(f"Generated UUID: {generated_uuid}")
         response[RESPONSE_HEADER_LENGTH:] = generated_uuid.encode('utf-8')
         conn.sendall(response)
-        print(f"Generated UUID: {generated_uuid}")
         db.register_user(name, generated_uuid)
 
 
@@ -167,20 +167,28 @@ def handle827(conn, client_id, version, code, payload_size, payload):
     # Extract the payload
     # payload = payload.decode('utf-8')
     name = payload.decode('utf-8').rstrip('\x00')
-    print(f"Payload for request 827: {name}")
+    # print(f"Payload for request 827: {name}")
 
     db = Database()
     user = db.get_user(name)
     if user:
         print("User exists")
-        response = bytearray(RESPONSE1600_LENGTH)
-        response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1600, UUID_LENGTH)
-        response[RESPONSE_HEADER_LENGTH:] = user[2].encode('utf-8')
+        username = user[1]
+        public_key = RSA.import_key(db.get_user_public_key(username)[0])
+        cipher_rsa = PKCS1_OAEP.new(public_key)
+
+        aes_key = db.get_user_aes_key(client_id.decode('utf-8'))[0]
+        encrypted_aes_key = cipher_rsa.encrypt(aes_key)
+        response = bytearray(RESPONSE1605_LENGTH+len(encrypted_aes_key))
+        response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1605, UUID_LENGTH+len(encrypted_aes_key))
+        response[RESPONSE_HEADER_LENGTH:RESPONSE_HEADER_LENGTH+UUID_LENGTH] = user[2].encode('utf-8')
+        response[RESPONSE_HEADER_LENGTH+UUID_LENGTH:] = struct.pack(f'<{len(encrypted_aes_key)}s', encrypted_aes_key)
         conn.sendall(response)
     else:
         print(f"User {name} not found")
-        response = bytearray(RESPONSE1601_LENGTH)
-        response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1601, 0)
+        response = bytearray(RESPONSE1606_LENGTH)
+        response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1606, UUID_LENGTH)
+        response[RESPONSE_HEADER_LENGTH:] = client_id
         conn.sendall(response)
 
 
@@ -210,8 +218,10 @@ def handle828(conn, client_id, version, code, payload_size, payload):
         f.write(decrypted_content)
 
     # save file to db
-    db.register_file(client_id.decode('utf-8'), fileName, file_path)
-
+    successful_register = db.register_file(client_id.decode('utf-8'), fileName, file_path)
+    if not successful_register:
+        pass
+        #response with code
 
     # Compute checksum of the written file
     cksum_str = read_file(file_path)  # Use the same function to calculate checksum
@@ -241,6 +251,13 @@ def handle900(conn, client_id, version, code, payload_size, payload):
     db = Database()
     db.verify_file(fileName)
 
+    #response with code 1604
+    response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1604_LENGTH)
+    response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1604, UUID_LENGTH)
+    response[RESPONSE_HEADER_LENGTH:] = client_id
+    conn.sendall(response)
+
+
 def handle901(conn, client_id, version, code, payload_size, payload):
     print("Handling request 901")
     if len(payload) != REQUEST901_LENGTH - REQUEST_HEADER_LENGTH:
@@ -249,7 +266,7 @@ def handle901(conn, client_id, version, code, payload_size, payload):
 
     # Extract the payload
     fileName = payload.decode('utf-8').strip('\x00')
-    print(f"File {fileName} has not benn registered")
+    print(f"File {fileName} has not been registered")
 
 def handle902(conn, client_id, version, code, payload_size, payload):
     print("Handling request 902")
@@ -260,6 +277,12 @@ def handle902(conn, client_id, version, code, payload_size, payload):
     # Extract the payload
     fileName = payload.decode('utf-8').strip('\x00')
     print(f"File {fileName} has an error 3 times and will be aborted")
+
+    #response with code 1604
+    response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1604_LENGTH)
+    response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1604, UUID_LENGTH)
+    response[RESPONSE_HEADER_LENGTH:] = client_id
+    conn.sendall(response)
 
 
 def remove_padding(data):

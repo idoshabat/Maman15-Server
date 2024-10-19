@@ -14,7 +14,7 @@ TRANSFER_ERROR = 901
 FILE_TRANSFER_ABORT = 902
 
 sel = selectors.DefaultSelector()
-create_port_file()
+# create_port_file()
 PORT = read_port()
 create_data_folder()
 HOST = '127.0.0.1'
