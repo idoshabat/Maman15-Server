@@ -44,22 +44,24 @@ def handle_request(sel, conn):
         raise Exception("Connection closed")
 
     try:
-        #print('**********', data[0:17], '**********')
+        # print('**********', data[0:17], '**********')
         client_id, version, code, payload_size = struct.unpack('<16sBHI', data)
-        #print(f'Received client_id: {client_id}\n, version: {version}\n, code: {code}\n,payloadsize: {payload_size}\n ')
+        # print(f'Received client_id: {client_id}\n, version: {version}\n, code: {code}\n,payloadsize: {payload_size}\n ')
 
-        payload = b''
-        remaining = payload_size
-        while remaining > 0:
-            chunk = conn.recv(min(4096, remaining))  # Read in chunks (up to 4KB at a time)
-            if not chunk:
-                print("Client disconnected before sending complete payload")
-                return
-            payload += chunk
-            remaining -= len(chunk)
+        # Read the payload
+        payload = struct.unpack(f'<{payload_size}s', conn.recv(payload_size))[0]
+        # payload = b''
+        # remaining = payload_size
+        # while remaining > 0:
+        #     chunk = conn.recv(min(4096, remaining))  # Read in chunks (up to 4KB at a time)
+        #     if not chunk:
+        #         print("Client disconnected before sending complete payload")
+        #         return
+        #     payload += chunk
+        #     remaining -= len(chunk)
 
-        #print(f"Payload received: {payload}")
-        #print("Payload size: ", len(payload))
+        # print(f"Payload received: {payload}")
+        # print("Payload size: ", len(payload))
 
         return client_id, version, code, payload_size, payload
         # payload = data[REQUEST_HEADER_LENGTH:REQUEST_HEADER_LENGTH + payload_size].decode('utf-8')
@@ -69,7 +71,7 @@ def handle_request(sel, conn):
         # reply_data = bytearray(reply, 'utf-8')
     except Exception as e:
         print(f"Error handling data: {e}")
-        #response with code 1607
+        # response with code 1607
         # response = bytearray(RESPONSE_HEADER_LENGTH)
         # response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1607, 0)
         # conn.sendall(response)
@@ -179,10 +181,10 @@ def handle827(conn, client_id, version, code, payload_size, payload):
 
         aes_key = db.get_user_aes_key(client_id.decode('utf-8'))[0]
         encrypted_aes_key = cipher_rsa.encrypt(aes_key)
-        response = bytearray(RESPONSE1605_LENGTH+len(encrypted_aes_key))
-        response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1605, UUID_LENGTH+len(encrypted_aes_key))
-        response[RESPONSE_HEADER_LENGTH:RESPONSE_HEADER_LENGTH+UUID_LENGTH] = user[2].encode('utf-8')
-        response[RESPONSE_HEADER_LENGTH+UUID_LENGTH:] = struct.pack(f'<{len(encrypted_aes_key)}s', encrypted_aes_key)
+        response = bytearray(RESPONSE1605_LENGTH + len(encrypted_aes_key))
+        response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1605, UUID_LENGTH + len(encrypted_aes_key))
+        response[RESPONSE_HEADER_LENGTH:RESPONSE_HEADER_LENGTH + UUID_LENGTH] = user[2].encode('utf-8')
+        response[RESPONSE_HEADER_LENGTH + UUID_LENGTH:] = struct.pack(f'<{len(encrypted_aes_key)}s', encrypted_aes_key)
         conn.sendall(response)
     else:
         print(f"User {name} not found")
@@ -196,9 +198,16 @@ def handle828(conn, client_id, version, code, payload_size, payload):
     print("Handling request 828")
     random_zero_or_one = random.randint(0, 1)
     lengthTillFileContent = 4 + 4 + 2 + 2 + 255
-    contentSize, originalFileSize, packetNumber, totalPackets, fileName = struct.unpack('<IIHH255s', payload[:lengthTillFileContent])
+    contentSize, originalFileSize, packetNumber, totalPackets, fileName = struct.unpack('<IIHH255s',
+                                                                                        payload[:lengthTillFileContent])
     fileName = fileName.decode('utf-8').rstrip('\x00')
     content = payload[lengthTillFileContent:]
+
+    print(f"Received file: {fileName} ({contentSize} bytes, {totalPackets} packets)")
+    print(f"Packet {packetNumber}/{totalPackets}")
+    print(f'Payload size: {len(payload)}')
+    print(f'Content size: {contentSize}')
+    print(f'Original file size: {originalFileSize}')
 
     db = Database()
     user = db.get_user_by_uuid(client_id.decode('utf-8'))
@@ -214,28 +223,37 @@ def handle828(conn, client_id, version, code, payload_size, payload):
 
     # Write the decrypted content to a file
     file_path = f"data/{fileName}"
-    with open(file_path, 'wb') as f:
-        f.write(decrypted_content)
 
-    # save file to db
-    successful_register = db.register_file(client_id.decode('utf-8'), fileName, file_path)
-    if not successful_register:
-        pass
-        #response with code
+    if not os.path.exists(file_path):
+        if packetNumber == 1:
+            with open(file_path, 'wb') as f:
+                f.write(decrypted_content)
+                print(f"File {fileName} created")
+    else:  # File already exists
+        if packetNumber == 1:  # If this is the first packet, overwrite the existing file
+            os.remove(file_path)
+            with open(file_path, 'wb') as f:
+                f.write(decrypted_content)
+                print(f"File {fileName} overwritten")
+        else:  # If this is not the first packet, append to the existing file
+            with open(file_path, 'ab') as f:
+                f.write(decrypted_content)
+                print(f"File {fileName} appended")
 
-    # Compute checksum of the written file
-    cksum_str = read_file(file_path)  # Use the same function to calculate checksum
-    cksum = int(cksum_str.split('\t')[0]) + random_zero_or_one
+    if packetNumber == totalPackets:
+        # Compute checksum of the written file
+        cksum_str = read_file(file_path)
+        cksum = int(cksum_str.split('\t')[0]) + random_zero_or_one
 
-
-    # Send the checksum back to the client
-    response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1603_LENGTH)
-    response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1603, RESPONSE1603_LENGTH - RESPONSE_HEADER_LENGTH)
-    response[RESPONSE_HEADER_LENGTH:RESPONSE_HEADER_LENGTH + 16] = struct.pack('<16s', client_id)
-    response[RESPONSE_HEADER_LENGTH + 16:RESPONSE_HEADER_LENGTH + 20] = struct.pack('<I', originalFileSize)
-    response[RESPONSE_HEADER_LENGTH + 20:RESPONSE_HEADER_LENGTH + 20 + 255] = struct.pack('<255s', fileName.encode('utf-8'))
-    response[RESPONSE_HEADER_LENGTH + 20 + 255:] = struct.pack('<I', cksum)
-    conn.sendall(response)
+        # Send the checksum back to the client
+        response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1603_LENGTH)
+        response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1603, RESPONSE1603_LENGTH - RESPONSE_HEADER_LENGTH)
+        response[RESPONSE_HEADER_LENGTH:RESPONSE_HEADER_LENGTH + 16] = struct.pack('<16s', client_id)
+        response[RESPONSE_HEADER_LENGTH + 16:RESPONSE_HEADER_LENGTH + 20] = struct.pack('<I', originalFileSize)
+        response[RESPONSE_HEADER_LENGTH + 20:RESPONSE_HEADER_LENGTH + 20 + 255] = struct.pack('<255s',
+                                                                                              fileName.encode('utf-8'))
+        response[RESPONSE_HEADER_LENGTH + 20 + 255:] = struct.pack('<I', cksum)
+        conn.sendall(response)
 
 
 def handle900(conn, client_id, version, code, payload_size, payload):
@@ -247,11 +265,11 @@ def handle900(conn, client_id, version, code, payload_size, payload):
     # Extract the payload
     fileName = payload.decode('utf-8').strip('\x00')
 
-    #verify file
+    # verify file
     db = Database()
     db.verify_file(fileName)
 
-    #response with code 1604
+    # response with code 1604
     response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1604_LENGTH)
     response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1604, UUID_LENGTH)
     response[RESPONSE_HEADER_LENGTH:] = client_id
@@ -268,6 +286,7 @@ def handle901(conn, client_id, version, code, payload_size, payload):
     fileName = payload.decode('utf-8').strip('\x00')
     print(f"File {fileName} has not been registered")
 
+
 def handle902(conn, client_id, version, code, payload_size, payload):
     print("Handling request 902")
     if len(payload) != REQUEST902_LENGTH - REQUEST_HEADER_LENGTH:
@@ -278,7 +297,10 @@ def handle902(conn, client_id, version, code, payload_size, payload):
     fileName = payload.decode('utf-8').strip('\x00')
     print(f"File {fileName} has an error 3 times and will be aborted")
 
-    #response with code 1604
+    #delete the file
+    os.remove(f'data/{fileName}')
+
+    # response with code 1604
     response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1604_LENGTH)
     response[:RESPONSE_HEADER_LENGTH] = struct.pack('<BHI', 3, 1604, UUID_LENGTH)
     response[RESPONSE_HEADER_LENGTH:] = client_id
