@@ -114,5 +114,9 @@ class Database:
         self.cursor.execute("SELECT * FROM clients WHERE uuid=?", (user_uuid,))
         return self.cursor.fetchone()
 
+    def update_last_seen(self, user_uuid):
+        self.cursor.execute("UPDATE clients SET last_seen=CURRENT_TIMESTAMP WHERE uuid=?", (user_uuid,))
+        self.conn.commit()
+
     def close(self):
         self.conn.close()

@@ -70,6 +70,7 @@ def handle825(conn, client_id, version, code, payload_size, payload):
 
     db = Database()  # Create a new database connection
     user = db.get_user(name)  # Check if the user already exists
+    db.update_last_seen(client_id.decode('utf-8'))  # Update the last seen time for the client
     if user:  # If the user exists
         print("User exists")
         # Send response 1601
@@ -113,6 +114,7 @@ def handle826(conn, client_id, version, code, payload_size, payload):
         db = Database()  # Create a new database connection
         db.set_user_public_key(name, pubKey)  # Save the public key in the database
         db.set_user_aes_key(name, aes_key)  # Save the AES key in the database
+        db.update_last_seen(client_id.decode('utf-8'))  # Update the last seen time for the client
 
         # Send the encrypted AES key back to the client
         response = bytearray(
@@ -138,6 +140,8 @@ def handle827(conn, client_id, version, code, payload_size, payload):
 
     db = Database()  # Create a new database connection
     user = db.get_user(name)  # Check if the user already exists
+    db.update_last_seen(client_id.decode('utf-8'))  # Update the last seen time for the client
+
     if user:  # If the user exists
         print("User exists")
         username = user[1]  # Get the username
@@ -174,6 +178,8 @@ def handle828(conn, client_id, version, code, payload_size, payload):
     user = db.get_user_by_uuid(client_id.decode('utf-8'))  # Get the user by UUID
     aes_key = db.get_user_aes_key(client_id.decode('utf-8'))  # Get the AES key
     username = user[1]  # Get the username
+    db.update_last_seen(client_id.decode('utf-8'))  # Update the last seen time for the client
+
 
     # Decrypt the content using AES CBC with IV full of zeros
     iv = b'\x00' * 16  # IV is 16 bytes of zeros
@@ -234,6 +240,8 @@ def handle900(conn, client_id, version, code, payload_size, payload):
     # verify file
     db = Database()
     db.verify_file(fileName)
+    db.update_last_seen(client_id.decode('utf-8'))  # Update the last seen time for the client
+
 
     # response with code 1604
     response = bytearray(RESPONSE_HEADER_LENGTH + RESPONSE1604_LENGTH)
@@ -252,6 +260,10 @@ def handle901(conn, client_id, version, code, payload_size, payload):
     fileName = payload.decode('utf-8').strip('\x00')
     print(f"File {fileName} has not been registered")
 
+    db = Database()
+    db.update_last_seen(client_id.decode('utf-8'))  # Update the last seen time for the client
+
+
 
 def handle902(conn, client_id, version, code, payload_size, payload):
     print("Handling request 902")
@@ -267,6 +279,8 @@ def handle902(conn, client_id, version, code, payload_size, payload):
     db = Database()
     user = db.get_user_by_uuid(client_id.decode('utf-8'))
     username = user[1]
+    db.update_last_seen(client_id.decode('utf-8'))  # Update the last seen time for the client
+
 
     # delete the file
     os.remove(f'data/{username}/{fileName}')
