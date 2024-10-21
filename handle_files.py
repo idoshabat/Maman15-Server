@@ -24,6 +24,7 @@ def create_port_file(port=8080, file_name='port.info'):
 def create_data_folder(folder_name='data'):
     try:
         os.mkdir(folder_name)
+        print(f"Folder \"{folder_name}\" created")
     except FileExistsError:
         print(f"Folder \"{folder_name}\" already exists")
     except Exception as e:

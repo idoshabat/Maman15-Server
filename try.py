@@ -4,27 +4,32 @@ import sqlite3
 conn = sqlite3.connect("defensive.db")
 cursor = conn.cursor()
 
-# Define the username of the user you want to delete
-username_to_delete = "David Levi"
-
 # Execute the DELETE query
-cursor.execute("DELETE FROM clients WHERE username = ?", (username_to_delete,))
+cursor.execute("DELETE FROM clients")
 
 # Commit the changes
 conn.commit()
 
 # Verify if the deletion was successful
-cursor.execute("SELECT * FROM clients WHERE username = ?", (username_to_delete,))
+cursor.execute("SELECT * FROM clients")
 result = cursor.fetchone()
 
 if result is None:
-    print(f"User {username_to_delete} successfully deleted.")
+    print(f"All users have been deleted successfully.")
 else:
-    print(f"Failed to delete user {username_to_delete}.")
+    print("Error deleting")
 
 #delete all files
 cursor.execute("DELETE FROM files")
 conn.commit()
+
+cursor.execute("SELECT * FROM files")
+result = cursor.fetchone()
+
+if result is None:
+    print(f"All files have been deleted successfully.")
+else:
+    print("Error deleting")
 
 # Close the connection
 conn.close()
